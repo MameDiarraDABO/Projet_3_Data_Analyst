@@ -1,0 +1,338 @@
+use dataimmo;
+
+select * from population;
+select count(*) from population;
+
+select * from region;
+select count(*) from region;
+
+select * from commune;
+select count(*) from commune;
+
+select * from bien;
+select count(*) from bien;
+
+select * from vente;
+select count(*) from vente;
+
+
+
+use dataimmo;
+
+--- 1. Nombre total d’appartements vendus au 1er semestre 2020.---
+
+select
+     -- count(v.Id_bien) AS " Nbre d'appartements vendus au semestre 1",
+     count(distinct b.Id_bien) AS  "Nbre d'appartements vendus au semestre 1"
+from
+    bien b
+join vente v
+    using (Id_bien)
+where
+     v.Date  between  '2020-01-01' and '2020-06-30'
+    and
+     b.Type_local = 'Appartement';
+
+   
+--- 2. Le nombre de ventes d’appartement par région pour le 1er semestre 2020.---
+
+select
+     r.Id_region as "Identifiant region",
+     r.Nom_region as "Region",     
+     -- count(b.Id_bien) as " Nbre de vente d'appartement par region",
+     count(distinct b.Id_bien) as  "Nbre de vente d'appartement par region"
+from 
+    bien b
+join vente v
+   on
+   b.Id_bien = v.Id_bien 
+join commune c
+   on 
+   b.id_codedep_codecommune = c.id_codedep_codecommune
+join region r
+   on 
+   c.Id_region = r.Id_region
+where
+     b.Type_local = 'Appartement' and 
+     v.Date between '2020-01-01' and '2020-06-30'
+group by
+     r.Id_region,r.Nom_region
+order by
+     count("Nbre de vente d'appartement par région") desc;
+    
+
+--- 3. Proportion des ventes d’appartements par le nombre de pièces.---
+--- round(('ventetrimestre2'-'ventetrimestre1')/('ventetrimestre2'),2)*100.0
+
+select
+    b.Total_piece as "Nbre de pièces",
+    round(count(v.Id_vente)/
+    (
+    select round(count(v.Id_vente),2)
+    from
+	vente v 
+	join bien b using (Id_bien)   
+	where
+	b.Type_local = 'Appartement')*100,2) as "Proportion de ventes d'appartements"
+from vente v 
+join bien b
+      using (Id_bien)
+where
+    b.Type_local = 'Appartement'
+group by 
+    b.Total_piece
+order by
+    b.Total_piece ;
+
+
+--- 4. Liste des 10 départements où le prix du mètre carré est le plus élevé.---
+
+select
+     c.code_departement as "Département",
+     avg(b.Surface_carrez) as "Nbre de mètre carre( m² )",
+     round(avg(v.Valeur / b.Surface_carrez),2)as "Prix mètre carré( € )"
+from
+    bien b
+join vente v
+     on
+     b.Id_bien = v.Id_bien 
+join commune c
+     on
+     b.id_codedep_codecommune = c.id_codedep_codecommune
+where
+     surface_carrez != 0 
+     and
+     code_departement is not null
+group by
+      c.code_departement
+order by
+       round(avg(v.Valeur / b.Surface_carrez),2) desc
+limit 10;
+
+
+--- 5. Prix moyen du mètre carré d’une maison en Île-de-France.---
+
+select
+     r.Nom_region as Region,
+     round(avg(v.valeur/b.Surface_carrez),3) as "Prix moyen du m² en IDF( € )"
+from 
+   bien b
+   join vente v 
+   on
+   b.Id_bien = v.Id_bien 
+join commune c
+   on
+   b.id_codedep_codecommune = c.id_codedep_codecommune
+join region r
+   on
+   c.Id_region = r.Id_region
+where
+    b.Type_local = 'Maison'
+   and
+      r.Nom_region = 'Ile-de-France';
+
+
+--- 6. Liste des 10 appartements les plus chers avec la région et le nombre de mètres carrés.---
+
+select
+     b.Id_bien as "Id bien",
+     code_departement AS "Département",
+     r.Nom_region as "Region",
+     round(b.Surface_carrez,0) as "Nbre de mètre carré( m² )",
+     round(v.Valeur,0) as "Prix du mètre carré( € )"
+     -- rank() over(order by v.Valeur desc) as 'Rang'
+from 
+    bien b
+join vente v
+    on
+    b.Id_bien = v.Id_bien 
+join commune c
+    on
+    b.id_codedep_codecommune = c.id_codedep_codecommune
+join region r
+    on
+    c.Id_region = r.Id_region
+where
+      b.Type_local = 'Appartement'
+      and 
+      v.valeur != 0
+order by
+       v.Valeur desc 
+limit 10;
+
+
+--- 7. Taux d’évolution du nombre de ventes entre le premier et le second trimestre de 2020.
+
+with 
+vente_1 as 
+    (select round(count(Id_vente),2) as vente_trimestre1
+     from vente
+     where Date  between  '2020-01-01' and '2020-03-31'),
+vente_2 as 
+    (select round(count(Id_vente),2) as vente_trimestre2
+     from vente
+     where Date  between  '2020-04-01' and '2020-06-30')
+select
+     vente_trimestre1, vente_trimestre2, round(((vente_trimestre2-vente_trimestre1)/vente_trimestre1*100),2) as "Taux d'evolution"
+from
+    vente_1, vente_2;
+   
+   
+--- 8. Le classement des régions par rapport au prix au mètre carré des appartement de plus de 4 pièces.---
+
+select
+     r.Nom_region as "Region",
+     round(avg(b.Surface_carrez),0) as "Nbre moyenne mètre carre( m² )",
+     b.Total_piece as "Nbre de pièces",
+     round(avg(v.Valeur / b.Surface_carrez),0) as "Prix mètre carre( € )",
+     rank() over(order by round(avg(v.Valeur / b.Surface_carrez),2) desc) as 'Rang'
+from 
+    bien b
+join vente v
+   on
+   b.Id_bien = v.Id_bien 
+join commune c
+   on
+   b.id_codedep_codecommune = c.id_codedep_codecommune
+join region r 
+   on
+   c.Id_region = r.Id_region
+   where 
+      b.Type_local = 'Appartement'
+      and 
+      surface_carrez != 0
+      and 
+      b.Total_piece > 4
+group by
+       r.Nom_region 
+limit 20;
+   
+--- 9. Liste des communes ayant eu au moins 50 ventes au 1er trimestre.---
+
+select
+      c.Nom_commune as "Liste des communes",      
+      count(v.Id_vente) as "Vente au premier trimestre"
+      -- count(distinct v.Id_vente) as "Vente au premier trimestre distinct"
+from 
+    bien b
+join vente v on b.Id_bien = v.Id_bien 
+join commune c on b.id_codedep_codecommune = c.id_codedep_codecommune
+where
+     v.Date between '2020-01-01' and '2020-03-31'
+group by
+      (c.Nom_commune)
+having 
+     count(v.Id_vente) >= 50
+order by 
+      count("Vente au premier trimestre") desc;    
+        
+--- 10. Différence en pourcentage du prix au mètre carré
+--- entre un appartement de 2 pièces et un appartement de 3 pièces.---
+
+with
+piece2 as (
+		select round(avg(v.valeur / b.surface_carrez),2) as prixm2_2P
+		from vente v
+		join bien b
+		   on
+		   v.Id_bien = b.Id_bien  
+		join commune c
+		    on
+		    b.id_codedep_codecommune = c.id_codedep_codecommune
+		where Type_local = 'Appartement' and  Total_piece = 2),
+piece3 as (
+		select round(avg(v.valeur / b.surface_carrez),2) as prixm2_3P
+		from vente v
+		join bien b
+		   on
+		   v.Id_bien = b.Id_bien  
+		join commune c
+		    on
+		    b.id_codedep_codecommune = c.id_codedep_codecommune
+		where Type_local = 'Appartement' and Total_piece = 3)
+select  prixm2_2P, prixm2_3P,round((prixm2_3P - prixm2_2P)/prixm2_2P*100,2)
+        AS "Taux d'évolution du prix au m² entre un 2P et un 3P"
+from piece2, piece3;
+
+
+
+--- 11. Les moyennes de valeurs foncières pour le top 3 des communes des départements 6, 13, 33, 59 et 69.---
+
+select 
+     c.code_departement as "Departement",
+     c.Nom_commune as "Commune",
+     round(avg(v.Valeur),2) as "Moyennes de valeurs foncieres",
+     rank() over(partition by c.code_departement order by round(avg(v.Valeur),2) desc) as "Top commune"
+from 
+    vente v
+join bien b on b.Id_bien = v.Id_bien 
+join commune c on b.id_codedep_codecommune = c.id_codedep_codecommune
+where
+    c.code_departement in ('6', '13', '33', '59','69')
+    and 
+     v.valeur != 0
+    -- and 
+     -- "Top commune" <= 3
+group by 
+    c.Nom_commune, c.code_departement
+-- having
+    -- "Top commune" <= 3;
+-- order by "Moyennes de valeurs foncieres" desc ;
+    
+  select *  
+ from    
+    (select 
+     c.Nom_commune as "Commune",
+     c.code_departement as "Departement",
+     round(avg(v.Valeur),2) as "Moyennes de valeurs foncieres",
+     row_number () over(partition by c.code_departement order by round(avg(v.Valeur),2) desc) as "Top commune"
+	from 
+	    vente v
+	join bien b on b.Id_bien = v.Id_bien 
+	join commune c on b.id_codedep_codecommune = c.id_codedep_codecommune
+	where
+	    c.code_departement in ('6', '13', '33', '59','69')
+	    and 
+	     v.valeur != 0
+	group by 
+	    c.Nom_commune, c.code_departement) p
+having  count("Top commune") <= 3
+ order by "Top commune"
+
+
+--- 12. Les 20 communes avec le plus de transactions pour 1000 habitants pour les communes qui dépassent les 10 000 habitants.---   
+
+select 
+    -- c.code_postal as "Code postal",
+    c.Nom_commune as "Commune", 
+    round(avg(b.surface_carrez),0) as "Surface Carrez moyenne",
+    round(avg(v.Valeur),0) as "Valeur fonctière moyenne",
+    round(round((count(b.Id_bien))*1000,2)/p.Nbre_habitant,2) as "Nombre d'achat pour mille habitants"
+from vente v
+  join bien b
+  on v.id_bien = b.Id_bien 
+  join commune c
+  on b.id_codedep_codecommune = c.id_codedep_codecommune
+  join Population p
+  on c.id_codedep_codecommune = p.id_codedep_codecommune
+where b.surface_carrez != 0 
+      and 
+      c.code_departement is not null 
+      and
+      p.Nbre_habitant > 10000
+group by
+      c.Nom_commune
+order by
+      "nombre d'achat pour mille habitants" DESC
+limit 20; 
+
+     
+
+SELECT round(avg(valeur / surface_carrez),2) AS "Prix maison au m² en IDF"
+FROM bien
+JOIN vente ON bien.Id_bien = vente.Id_bien
+JOIN commune on bien.id_codedep_codecommune = commune.id_codedep_codecommune
+JOIN region on commune.Id_region = region.Id_region
+WHERE Nom_region = "Ile-de-France"
+
+
